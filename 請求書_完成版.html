@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>請求書</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f1f1f1;font-family:-apple-system,BlinkMacSystemFont,"Yu Gothic","Meiryo",sans-serif;color:#222}
+.app{max-width:1000px;margin:0 auto;padding:20px}
+.panel{background:#fff;border-radius:14px;padding:20px;margin-bottom:20px;box-shadow:0 3px 12px rgba(0,0,0,.08)}
+.panel h2{margin:0 0 18px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.field label{display:block;font-weight:bold;margin-bottom:6px}
+.field input{width:100%;padding:12px;border:1px solid #bbb;border-radius:8px;font-size:16px}
+.buttons{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+button{border:0;border-radius:9px;padding:13px 20px;font-size:16px;font-weight:bold;cursor:pointer}
+.pdf{background:#222;color:#fff}
+.stampBtn{background:#b40000;color:#fff}
+.clear{background:#ddd;color:#222}
+.invoice{position:relative;background:#fff;width:210mm;min-height:297mm;margin:0 auto;padding:24mm 22mm;box-shadow:0 3px 15px rgba(0,0,0,.12)}
+.title{text-align:center;font-size:40px;letter-spacing:.45em;margin:0 0 50px 0}
+.top{display:flex;justify-content:space-between;gap:30px;margin-bottom:55px}
+.customer{font-size:23px;border-bottom:2px solid #222;padding-bottom:8px;min-width:280px}
+.date{text-align:right;font-size:17px;line-height:1.8}
+.amountBox{border:3px solid #222;padding:28px 20px;text-align:center;margin:35px 0 55px}
+.amountLabel{font-size:19px;margin-bottom:12px}
+.amount{font-size:42px;font-weight:bold}
+.message{text-align:center;font-size:18px}
+.sender{position:absolute;right:22mm;bottom:40mm;font-size:18px;text-align:right}
+.sender strong{font-size:22px}
+.stamp{position:absolute;right:22mm;bottom:65mm;width:115px;height:115px;border:5px solid #c00000;border-radius:50%;color:#c00000;display:none;align-items:center;justify-content:center;font-size:20px;font-weight:bold;transform:rotate(-10deg)}
+.stamp.show{display:flex}
+.note{font-size:13px;color:#666;margin-top:10px}
+@media(max-width:760px){
+ .grid{grid-template-columns:1fr}
+ .invoice{width:100%;min-height:auto;padding:40px 25px 220px}
+ .top{display:block}
+ .date{text-align:left;margin-top:25px}
+ .sender{right:25px;bottom:35px}
+ .stamp{right:25px;bottom:100px}
+}
+@media print{
+ body{background:#fff}
+ .panel{display:none}
+ .app{padding:0;max-width:none}
+ .invoice{box-shadow:none;margin:0;width:210mm;min-height:297mm}
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+<div class="panel">
+<h2>請求書を作成</h2>
+
+<div class="grid">
+<div class="field">
+<label>請求先</label>
+<input id="customer" type="text" placeholder="請求先を入力">
+</div>
+
+<div class="field">
+<label>請求日</label>
+<input id="date" type="date">
+</div>
+
+<div class="field">
+<label>請求金額</label>
+<input id="amount" type="number" min="0" inputmode="numeric" placeholder="金額を入力">
+</div>
+
+<div class="field">
+<label>発行者</label>
+<input id="sender" type="text" placeholder="発行者を入力">
+</div>
+</div>
+
+<div class="buttons">
+<button class="stampBtn" onclick="toggleStamp()">預かり済みハンコ</button>
+<button class="pdf" onclick="downloadPDF()">PDFダウンロード</button>
+<button class="clear" onclick="clearAll()">クリア</button>
+</div>
+<div class="note">PDFダウンロードを押すと、この請求書をPDFファイルとして保存します。</div>
+</div>
+
+<div id="invoice" class="invoice">
+<h1 class="title">請求書</h1>
+
+<div class="top">
+<div class="customer" id="customerView">請求先：＿＿＿＿＿＿＿＿</div>
+<div class="date">請求日：<span id="dateView">＿＿年＿＿月＿＿日</span></div>
+</div>
+
+<div class="amountBox">
+<div class="amountLabel">請求金額</div>
+<div class="amount">￥<span id="amountView">0</span></div>
+</div>
+
+<div class="message">上記の金額を請求いたします。</div>
+
+<div id="stamp" class="stamp">預かり済</div>
+
+<div class="sender">
+<div>発行者</div>
+<strong id="senderView">＿＿＿＿＿＿＿＿</strong>
+</div>
+</div>
+</div>
+
+<!-- PDF生成用ライブラリ -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<script>
+const $ = id => document.getElementById(id);
+
+function setToday(){
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth()+1).padStart(2,"0");
+    const day = String(d.getDate()).padStart(2,"0");
+    $("date").value = `${y}-${m}-${day}`;
+}
+
+function updateInvoice(){
+    const customer = $("customer").value.trim();
+    const amount = $("amount").value;
+    const sender = $("sender").value.trim();
+    const date = $("date").value;
+
+    $("customerView").textContent =
+        customer ? "請求先：" + customer : "請求先：＿＿＿＿＿＿＿＿";
+
+    $("senderView").textContent =
+        sender ? sender : "＿＿＿＿＿＿＿＿";
+
+    $("amountView").textContent =
+        amount ? Number(amount).toLocaleString("ja-JP") : "0";
+
+    if(date){
+        const d = new Date(date + "T00:00:00");
+        $("dateView").textContent =
+            `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
+    }else{
+        $("dateView").textContent = "＿＿年＿＿月＿＿日";
+    }
+}
+
+["customer","amount","sender","date"].forEach(id=>{
+    $(id).addEventListener("input", updateInvoice);
+    $(id).addEventListener("change", updateInvoice);
+});
+
+function toggleStamp(){
+    $("stamp").classList.toggle("show");
+}
+
+async function downloadPDF(){
+    updateInvoice();
+
+    const button = document.querySelector(".pdf");
+    const oldText = button.textContent;
+    button.disabled = true;
+    button.textContent = "PDF作成中...";
+
+    try{
+        const invoice = $("invoice");
+
+        const canvas = await html2canvas(invoice,{
+            scale: 2,
+            backgroundColor: "#ffffff",
+            useCORS: true
+        });
+
+        const { jsPDF } = window.jspdf;
+
+        const pdf = new jsPDF({
+            orientation: "portrait",
+            unit: "mm",
+            format: "a4"
+        });
+
+        const pageWidth = 210;
+        const pageHeight = 297;
+
+        const ratio = Math.min(
+            pageWidth / canvas.width,
+            pageHeight / canvas.height
+        );
+
+        const width = canvas.width * ratio;
+        const height = canvas.height * ratio;
+
+        const x = (pageWidth - width) / 2;
+        const y = (pageHeight - height) / 2;
+
+        pdf.addImage(
+            canvas.toDataURL("image/jpeg",0.95),
+            "JPEG",
+            x,y,width,height
+        );
+
+        const customer =
+            $("customer").value.trim() || "請求書";
+
+        const safeName =
+            customer.replace(/[\\/:*?"<>|]/g,"_");
+
+        pdf.save(safeName + "_請求書.pdf");
+
+    }catch(error){
+        console.error(error);
+        alert("PDFの作成に失敗しました。もう一度お試しください。");
+    }finally{
+        button.disabled = false;
+        button.textContent = oldText;
+    }
+}
+
+function clearAll(){
+    if(!confirm("入力内容をすべて消しますか？")) return;
+
+    $("customer").value = "";
+    $("amount").value = "";
+    $("sender").value = "";
+    setToday();
+    $("stamp").classList.remove("show");
+    updateInvoice();
+}
+
+setToday();
+updateInvoice();
+</script>
+</body>
+</html>
